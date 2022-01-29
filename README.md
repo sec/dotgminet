@@ -1,0 +1,6 @@
+- Quick and dirty implementation of Gemini protocol server.
+- Files are served from `public` directory, next to binary.
+- Support `text/gemini` based on `.gmi` extension (client can request `/file` or `/file.gmi`).
+- Other file are served directly, with MIME type based on extension.
+- Uses `` for server certificate.
+- Hardcoded on purpose
