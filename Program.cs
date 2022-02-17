@@ -7,7 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.WebHost.UseKestrel(o =>
 {
-    o.ListenLocalhost(1965, b =>
+    o.ListenAnyIP(1965, b =>
     {
         b.UseHttps(Path.Combine(AppContext.BaseDirectory, "certificate.pfx"), "", o =>
         {
