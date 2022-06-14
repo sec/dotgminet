@@ -1,28 +1,48 @@
-﻿/// <summary>
+﻿using System.IO.Pipelines;
+
+/// <summary>
 /// Based on https://gemini.circumlunar.space/docs/specification.gmi
 /// </summary>
-public class GeminiRequestHandler : IAsyncDisposable
+public class GeminiRequestHandler : ConnectionHandler
 {
-    private static readonly FileExtensionContentTypeProvider _mime = new();
-
-    private readonly ILogger<GeminiConnectionHandler> _logger;
-    private readonly ConnectionContext _connection;
-    private readonly Uri _uri;
-    private readonly StringBuilder _sb;
-
     private const string GMI_EXT = ".gmi";
     private const string MIME_GMI = "text/gemini";
     private const string PUBLIC = "public";
 
-    public GeminiRequestHandler(ILogger<GeminiConnectionHandler> logger, ConnectionContext connection, Uri uri)
+    private static readonly FileExtensionContentTypeProvider _mime = new();
+
+    private readonly ILogger<GeminiRequestHandler> _logger;
+    private readonly StringBuilder _sb;
+
+    public GeminiRequestHandler(ILogger<GeminiRequestHandler> logger)
     {
         _logger = logger;
-        _connection = connection;
-        _uri = uri;
         _sb = new();
+
+        _logger.LogInformation("GeminiRequestHandler created");
     }
 
-    internal async Task HandleAsync()
+    public async override Task OnConnectedAsync(ConnectionContext connection)
+    {
+        var result = await connection.Transport.Input.ReadAsync();
+        var buffer = result.Buffer;
+
+        if (buffer.IsSingleSegment)
+        {
+            _logger.LogInformation("New connection handling");
+
+            await HandleAsync(connection, new Uri(Encoding.UTF8.GetString(buffer.FirstSpan).Trim()));
+
+            await connection.Transport.Output.CompleteAsync();
+            await connection.DisposeAsync();
+        }
+        else
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    async Task HandleAsync(ConnectionContext connection, Uri _uri)
     {
         var req = _uri.Segments.Last();
 
@@ -35,7 +55,7 @@ public class GeminiRequestHandler : IAsyncDisposable
             AddLine($">");
             AddLine($">{DateTime.Now:O}");
 
-            await Flush();
+            await Flush(connection);
         }
         else
         {
@@ -50,55 +70,42 @@ public class GeminiRequestHandler : IAsyncDisposable
             {
                 if (Path.GetExtension(filename) == GMI_EXT)
                 {
-                    await SendFile(MIME_GMI, filename);
+                    await SendFile(connection, MIME_GMI, filename);
                 }
                 else
                 {
-                    await SendFile(_mime.TryGetContentType(filename, out var contentType) ? contentType : "application/octet-stream", filename);
+                    await SendFile(connection, _mime.TryGetContentType(filename, out var contentType) ? contentType : "application/octet-stream", filename);
                 }
             }
             else
             {
                 AddLine("51 Not found.");
-                await Flush();
+                await Flush(connection);
             }
         }
     }
 
-    private async Task SendFile(string contentType, string filename)
+    async Task SendFile(ConnectionContext connection, string contentType, string filename)
     {
         var finfo = new FileInfo(filename);
         var buffer = new Memory<byte>(new byte[1024 * 16]);
         var bytesRead = 0L;
 
         AddLine($"20 {contentType}");
-        await Flush();
+        await Flush(connection);
 
         using var reader = new FileStream(filename, FileMode.Open);
         while (bytesRead < finfo.Length)
         {
             var read = await reader.ReadAsync(buffer);
 
-            await _connection.Transport.Output.WriteAsync(buffer[0..read]);
+            await connection.Transport.Output.WriteAsync(buffer[0..read]);
 
             bytesRead += read;
         }
     }
 
-    protected void AddLine(string s = "")
-    {
-        _sb.Append(s);
-        _sb.Append("\r\n");
-    }
+    void AddLine(string s = "") => _sb.Append($"{s}\r\n");
 
-    protected async Task Flush()
-    {
-        await _connection.Transport.Output.WriteAsync(Encoding.UTF8.GetBytes(_sb.ToString()));
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await _connection.Transport.Output.CompleteAsync();
-        await _connection.DisposeAsync();
-    }
+    ValueTask<FlushResult> Flush(ConnectionContext connection) => connection.Transport.Output.WriteAsync(Encoding.UTF8.GetBytes(_sb.ToString()));
 }

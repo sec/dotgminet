@@ -5,18 +5,31 @@ global using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.WebHost.UseKestrel(o =>
-{
-    o.ListenAnyIP(1965, b =>
+builder.WebHost
+    .ConfigureServices(o =>
     {
-        b.UseHttps(Path.Combine(AppContext.BaseDirectory, "certificate.pfx"), "", o =>
+        o.AddTransient<GeminiRequestHandler>();
+    })
+    .UseKestrel(o =>
+    {
+        o.ListenAnyIP(1965, b =>
         {
-            o.SslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13;
-            o.AllowAnyClientCertificate();
+            b.UseHttps(Path.Combine(AppContext.BaseDirectory, "certificate.pfx"), "", o =>
+            {
+                o.SslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13;
+                o.AllowAnyClientCertificate();
+            });
+
+            b.UseConnectionHandler(() => b.ApplicationServices.GetRequiredService<GeminiRequestHandler>());
         });
-        b.UseConnectionHandler<GeminiConnectionHandler>();
     });
-});
 
 var app = builder.Build();
 app.Run();
+
+public static class Ext
+{
+    public static IConnectionBuilder UseConnectionHandler<T>(this IConnectionBuilder connectionBuilder, Func<T> factory)
+        where T : ConnectionHandler => connectionBuilder.Run(connection
+            => factory().OnConnectedAsync(connection));
+}
