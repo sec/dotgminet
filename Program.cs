@@ -5,24 +5,20 @@ global using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.WebHost
-    .ConfigureServices(o =>
+builder.Services.AddTransient<GeminiRequestHandler>();
+builder.WebHost.ConfigureKestrel(o =>
+{
+    o.ListenAnyIP(1965, b =>
     {
-        o.AddTransient<GeminiRequestHandler>();
-    })
-    .UseKestrel(o =>
-    {
-        o.ListenAnyIP(1965, b =>
+        b.UseHttps(Path.Combine(AppContext.BaseDirectory, "certificate.pfx"), "", o =>
         {
-            b.UseHttps(Path.Combine(AppContext.BaseDirectory, "certificate.pfx"), "", o =>
-            {
-                o.SslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13;
-                o.AllowAnyClientCertificate();
-            });
-
-            b.UseConnectionHandler(() => b.ApplicationServices.GetRequiredService<GeminiRequestHandler>());
+            o.SslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13;
+            o.AllowAnyClientCertificate();
         });
+
+        b.UseConnectionHandler(() => b.ApplicationServices.GetRequiredService<GeminiRequestHandler>());
     });
+});
 
 var app = builder.Build();
 app.Run();
