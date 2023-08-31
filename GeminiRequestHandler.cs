@@ -8,6 +8,8 @@ public class GeminiRequestHandler : ConnectionHandler
     private const string GMI_EXT = ".gmi";
     private const string MIME_GMI = "text/gemini";
     private const string PUBLIC = "public";
+    private const string CRLF = "\r\n";
+    private const string SCHEME = "gemini";
 
     private static readonly FileExtensionContentTypeProvider _mime = new();
 
@@ -30,11 +32,14 @@ public class GeminiRequestHandler : ConnectionHandler
         if (buffer.IsSingleSegment)
         {
             _logger.LogInformation("New connection handling");
-
-            await HandleAsync(connection, new Uri(Encoding.UTF8.GetString(buffer.FirstSpan).Trim()));
+            var req = Encoding.UTF8.GetString(buffer.FirstSpan);
+            if (req.EndsWith(CRLF))
+            {
+                await HandleAsync(connection, new Uri(req));
+            }
 
             await connection.Transport.Output.CompleteAsync();
-            await connection.DisposeAsync();
+            await connection.Transport.Output.FlushAsync();
         }
         else
         {
@@ -46,7 +51,13 @@ public class GeminiRequestHandler : ConnectionHandler
     {
         var req = _uri.Segments.Last();
 
-        if (req == "/")
+        if (_uri.Scheme != SCHEME)
+        {
+            AddLine($"59");
+
+            await Flush(connection);
+        }
+        else if (req == "/")
         {
             AddLine($"20 {MIME_GMI}");
 
@@ -105,7 +116,7 @@ public class GeminiRequestHandler : ConnectionHandler
         }
     }
 
-    void AddLine(string s = "") => _sb.Append($"{s}\r\n");
+    void AddLine(string s = "") => _sb.Append($"{s}{CRLF}");
 
     ValueTask<FlushResult> Flush(ConnectionContext connection) => connection.Transport.Output.WriteAsync(Encoding.UTF8.GetBytes(_sb.ToString()));
 }

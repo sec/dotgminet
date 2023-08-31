@@ -2,6 +2,7 @@ global using Microsoft.AspNetCore.Connections;
 global using Microsoft.AspNetCore.StaticFiles;
 global using System.Runtime.InteropServices;
 global using System.Text;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,8 +11,9 @@ builder.WebHost.ConfigureKestrel(o =>
 {
     o.ListenAnyIP(1965, b =>
     {
+        b.Protocols = HttpProtocols.None;
         b.UseHttps(Path.Combine(AppContext.BaseDirectory, "certificate.pfx"), "", o =>
-        {
+        {            
             o.SslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13;
             o.AllowAnyClientCertificate();
         });
